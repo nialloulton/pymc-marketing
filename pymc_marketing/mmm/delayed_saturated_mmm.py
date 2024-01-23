@@ -356,19 +356,29 @@ class BaseDelayedSaturatedMMM(MMM):
     def gp_wrapper(self, name, X, config, positive=False, **kwargs):
         return self.gp_coeff(X, name, config=config, positive=positive, **kwargs)
 
-    def gp_coeff(self, X, name, mean=0.0, positive=False, config=None):
-        params = pm.find_constrained_prior(pm.Gamma, 8, 12, init_guess={"alpha": 1, "beta": 1}, mass=0.8)
-        ell = pm.Gamma(f"ell_{name}", **params)
-        eta = pm.Exponential(f"_eta_{name}", lam=1)
-  #      cov = eta ** 2 * pm.gp.cov.ExpQuad(1, ls=ell)
 
-        cov = eta ** 2 * pm.gp.cov.Matern32(1, ls=ell)
+    def gp_coeff(X, name, mean=0.0, positive=False, config=None):
+        # Extract GP params from config
+        gp_params = config.get('gp_params', {})
+        lower = gp_params.get('lower', 8)  # Provide a default if not in config
+        upper = gp_params.get('upper', 12)  # Provide a default if not in config
+        mass = gp_params.get('mass', 0.8)     # Provide a default if not in config
+
+        params = pm.find_constrained_prior(pm.InverseGamma, lower, upper, init_guess={"alpha": 1, "beta": 1}, mass=mass)
+        ell = pm.InverseGamma(f"ell_{name}", **params)
+        eta = pm.Exponential(f"_eta_{name}", lam=1 / 0.5)
+        cov = eta ** 2 * pm.gp.cov.Matern52(1, ls=ell)
     
-        gp = pm.gp.HSGP(m=[40], c=4, cov_func=cov)
+        gp_model = GaussianProcessModel(lower=lower, upper=upper, mass=mass)
+
+
+        # Calculate m and c dynamically
+        m, c = gp_model.set_approx_params(X)
+
+        # Use calculated m and c in HSGP
+        gp = pm.gp.HSGP(m=[m], c=c, cov_func=cov)
         f_raw = gp.prior(f"{name}_tvp_raw", X=X)
-    
 
-        # Inside your gp_coeff function
         # Offset
         offset_config = config.get('offset', None) if config else None
         if offset_config:
@@ -382,7 +392,7 @@ class BaseDelayedSaturatedMMM(MMM):
             f_output = pm.Deterministic(f"{name}", (pt.exp(f_raw)) + offset_prior, dims=("date"))
         else:
             f_output = pm.Deterministic(f"{name}", f_raw + offset_prior, dims=("date"))
-    
+
         return f_output
 
 
@@ -406,6 +416,92 @@ class BaseDelayedSaturatedMMM(MMM):
             "gamma_fourier": {"mu": 0, "b": 1, "dims": "fourier_mode"},
         }
         return model_config
+
+    @property
+    def default_tvp_config(self) -> Dict:
+        model_config: Dict = {
+            "intercept": {
+                "type": "tvp",
+                "positive": False,  # Adjust as needed
+                "dims": ("date",),  # The dimension over which the parameter varies
+                "offset": {
+                    "type": "Normal",
+                    "mu": 0,
+                    "sigma": 1
+                },
+                "gp_params": {  # Gaussian Process parameters nested within intercept
+                    "lower": 8,  # Example value, adjust as needed
+                    "upper": 12,    # Example value, adjust as needed
+                    "mass": 0.95    # Example value, adjust as needed
+                }
+            },
+    .
+            "beta_channel": {"type": "HalfNormal", "sigma": 2, "dims": ("channel",)},
+            "alpha": {"type": "Beta", "alpha": 1, "beta": 3, "dims": ("channel",)},
+            "lam": {"type": "Gamma", "alpha": 3, "beta": 1, "dims": ("channel",)},
+            "gamma_control": {'type': 'Gamma', 'alpha': 2, 'beta': 1, 'dims': ('control',)},
+            "mu": {"dims": ("date",)},
+            "likelihood": {
+                "type": "Normal",
+                "dims": ("date",),
+                "params": {
+                    "sigma": {"type": "HalfNormal", "sigma": 1, 'dims': ('date',)},
+                }
+            },
+            "gamma_fourier": {"mu": 0, "b": 1, "dims": "fourier_mode"},
+        }
+        return model_config
+
+    @property
+    def default_tvp_v2_config(self) -> Dict:
+        model_config: Dict = {
+            "intercept": {
+                "type": "tvp",
+                "positive": False,
+                "dims": ("date",),
+                "offset": {
+                    "type": "Normal",
+                    "mu": 0,
+                    "sigma": 1
+                },
+                "gp_params": {
+                    "lower": 5,
+                    "upper": 10,
+                    "mass": 0.95
+                }
+            },
+            "gamma_control": {
+                "type": "tvp",
+                "positive": False,
+                "dims": ("date", "control"),
+                "offset": {
+                    "type": "Normal",
+                    "mu": 0,
+                    "sigma": 1
+                },
+                "gp_params": {
+                    "lower": 0.5,  # Example of a longer length scale
+                    "upper": 15,
+                    "mass": 0.95
+                }
+            },
+            # ... rest of the model configuration ...
+            "beta_channel": {"type": "HalfNormal", "sigma": 2, "dims": ("channel",)},
+            "alpha": {"type": "Beta", "alpha": 1, "beta": 3, "dims": ("channel",)},
+            "lam": {"type": "Gamma", "alpha": 3, "beta": 1, "dims": ("channel",)},
+            "mu": {"dims": ("date",)},
+            "likelihood": {
+                "type": "Normal",
+                "dims": ("date",),
+                "params": {
+                    "sigma": {"type": "HalfNormal", "sigma": 1, 'dims': ('date',)},
+                }
+            },
+            "gamma_fourier": {"mu": 0, "b": 1, "dims": "fourier_mode"},
+        }
+        return model_config
+
+
 
 
 
@@ -615,6 +711,51 @@ class BaseDelayedSaturatedMMM(MMM):
             return d
 
         return format_nested_dict(model_config.copy())
+
+class GaussianProcessModel:
+    def __init__(self, lower, upper, mass):
+        self.lower = lower
+        self.upper = upper
+        self.mass = mass
+
+
+
+    def set_approx_params(self, X):
+            """
+            Given a prior for the lengthscale, choose m and c such that the HSGP
+            approx is accurate over the bulk of the prior.  Choose the smallest m and largest 
+            c for computational efficiency.
+            """
+
+            X_res = np.min(np.diff(np.sort(X.flatten())))
+            if self.lower < X_res:
+                # raise warning about low resolutions
+                self.lower = X_res
+
+            # set fudge factor so approx is accurate outside of (lower, upper)
+            alpha = 1 - self.mass
+            fudge_factor = 1 + 2 * alpha
+
+            S = np.max(X - np.mean(X))
+            c = 1.1
+            while True:
+                # increment c by 0.1, starting at minimum for Matern52
+                c += 0.1
+                if c < 4.1 * (self.upper / S):
+                    # c too small to capture long lengthscale dynamics
+                    continue
+                else:
+                    # calculate m for given c
+                    m = 2.65 * c / (self.lower / S)
+                    break 
+
+                if c > 25:
+                    # stop trying, give warning that user probably set upper too high
+                    break
+
+            m = int(np.round(fudge_factor * m))
+            c = fudge_factor * c
+            return m, c
 
 
 class DelayedSaturatedMMM(
