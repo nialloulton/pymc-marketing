@@ -435,7 +435,6 @@ class BaseDelayedSaturatedMMM(MMM):
                     "mass": 0.95    # Example value, adjust as needed
                 }
             },
-    .
             "beta_channel": {"type": "HalfNormal", "sigma": 2, "dims": ("channel",)},
             "alpha": {"type": "Beta", "alpha": 1, "beta": 3, "dims": ("channel",)},
             "lam": {"type": "Gamma", "alpha": 3, "beta": 1, "dims": ("channel",)},
@@ -451,6 +450,7 @@ class BaseDelayedSaturatedMMM(MMM):
             "gamma_fourier": {"mu": 0, "b": 1, "dims": "fourier_mode"},
         }
         return model_config
+
 
     @property
     def default_tvp_v2_config(self) -> Dict:
