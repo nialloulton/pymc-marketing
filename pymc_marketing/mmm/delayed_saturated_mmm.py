@@ -727,7 +727,9 @@ class GaussianProcessModel:
             c for computational efficiency.
             """
 
-            X_res = np.min(np.diff(np.sort(X.flatten())))
+            X_array = np.array(X).flatten() if not isinstance(X, np.ndarray) else X.flatten()
+            X_res = np.min(np.diff(np.sort(X_array)))
+
             if self.lower < X_res:
                 # raise warning about low resolutions
                 self.lower = X_res
