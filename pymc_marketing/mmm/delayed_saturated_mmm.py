@@ -364,7 +364,7 @@ class BaseDelayedSaturatedMMM(MMM):
         upper = gp_params.get('upper', 12)  # Provide a default if not in config
         mass = gp_params.get('mass', 0.8)     # Provide a default if not in config
 
-        params = pm.find_constrained_prior(pm.InverseGamma, lower, upper, init_guess={"alpha": 1, "beta": 1}, mass=mass)
+        params = pm.find_constrained_prior(pm.Gamma, lower, upper, init_guess={"alpha": upper, "beta": 1}, mass=mass)
         ell = pm.InverseGamma(f"ell_{name}", **params)
         eta = pm.Exponential(f"_eta_{name}", lam=1 / 0.5)
         cov = eta ** 2 * pm.gp.cov.Matern52(1, ls=ell)
