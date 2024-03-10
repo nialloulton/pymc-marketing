@@ -467,6 +467,84 @@ def scale_preserving_logistic_saturation(x, m: Union[npt.NDArray[np.float_], flo
     return m * (1 - pt.exp(-2 / m * x)) / (1 + pt.exp(-2 / m * x))
 
 
+def effective_reach_curve(grps, max_reach: Union[npt.NDArray[np.float_], float] = 100, effective_frequency: Union[npt.NDArray[np.float_], float], impact_factor: float = 1):
+    """
+    A special case of the scale preserving logistic transformation.
+    
+    Transforms Gross Rating Points (GRPs) into effective reach, a key driver of sales, by incorporating the concept of effective frequency. According to Ipsos, effective reach is the number or percentage of a target audience exposed a sufficient number of times within a period to trigger a sale, which is quantified by the concept of effective frequency.
+
+    This function models the diminishing return effect on sales effectiveness as ad exposures increase, using a logistic transformation that accounts for both the reach potential and the impact of frequency on reach effectiveness. The effective frequency parameter represents the optimal number of ad exposures required to drive sales, while the impact factor moderates the influence of frequency on the conversion of GRPs to effective reach.
+
+    Properties:
+
+    * Effective reach is bounded by the maximum reach (`max_reach`), ensuring realistic outcomes.
+    * Incorporates the concept of effective frequency (`effective_frequency`), reflecting the optimal number of exposures.
+    * The impact factor (`impact_factor`) moderates the influence of frequency, modeling diminishing returns.
+    * The function's output scales with the input GRPs, but is adjusted for frequency and impact, providing a nuanced view of campaign effectiveness.
+
+    Mathematical Representation:
+    
+    .. math::
+        f(grps) = \\text{{max_reach}} \\left( \\frac{{1 - e^{{-\\frac{{2}}{{\\text{{max_reach}}} \\times \\text{{adjusted_grps}}}}}}}{{1 + e^{{-\\frac{{2}}{{\\text{{max_reach}}} \\times \\text{{adjusted_grps}}}}}}} \\right)
+
+    Where:
+
+    .. math::
+        \\text{{adjusted_grps}} = \\frac{{grps}}{{1 + \\text{{impact_factor}} \\times (\\text{{effective_frequency}} - 1)}}
+
+    Parameters
+    ----------
+    grps : tensor
+        Input tensor representing Gross Rating Points, reflecting the total exposure of an advertising campaign.
+    max_reach : float or array-like, default 100
+        The maximum achievable reach, serving as the upper limit for the effective reach output.
+    effective_frequency : float or array-like
+        The effective frequency parameter, indicating the optimal number of exposures needed to drive sales.
+    impact_factor : float
+        A moderating factor that adjusts the impact of frequency on the effective reach.
+
+    Returns
+    -------
+    tensor
+        The effective reach curve, translating GRPs into a measure of reach that effectively drives sales, adjusted for the optimal frequency and impact factor.
+
+    References:
+    Ipsos Encyclopedia - Effective Reach. [Ipsos](https://www.ipsos.com/en/ipsos-encyclopedia-effective-reach#:~:text=Effective%20reach%20is%20the%20number,(known%20as%20Effective%20Frequency).)
+
+    Example Usage:
+    
+    .. plot::
+        :context: close-figs
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+        from your_module import effective_reach_curve  # Replace 'your_module' with the actual module name
+        plt.style.use('seaborn-darkgrid')
+        
+        grps = np.linspace(0, 500, 500)
+        effective_frequency = [1, 2, 3]
+        impact_factor = 1
+        max_reach = 100
+        
+        plt.figure(figsize=(10, 6))
+        for f in effective_frequency:
+            reach_curve = effective_reach_curve(grps, max_reach=max_reach, effective_frequency=f, impact_factor=impact_factor)
+            plt.plot(grps, reach_curve, label=f'Effective Frequency = {f}')
+
+        plt.title('Effective Reach vs. GRPs for Different Effective Frequencies')
+        plt.xlabel('GRPs')
+        plt.ylabel('Effective Reach')
+        plt.legend()
+        plt.show()
+
+    """
+    if max_reach == 0:
+        return np.zeros_like(grps)
+    # Adjust GRPs to account for the effective frequency, with the impact factor moderating the influence
+    adjusted_grps = grps / (1 + impact_factor * (effective_frequency - 1))
+    return max_reach * (1 - np.exp(-2 / max_reach * adjusted_grps)) / (1 + np.exp(-2 / max_reach * adjusted_grps))
+
+
 class TanhSaturationParameters(NamedTuple):
     b: pt.TensorLike
     """Saturation.
