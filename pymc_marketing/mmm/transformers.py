@@ -371,6 +371,42 @@ def weibull_adstock(
     return batched_convolution(x, w, axis=axis)
 
 
+def RF_saturation(X, EF, m=1, base_alpha=0, alpha_slope=0.01, beta_param=5):
+    """
+    Calculate adjusted saturation levels with checks for 0 GRPs and edge cases, integrating alpha parameter calculation.
+
+    This function computes saturation levels based on GRPs (Gross Rating Points), adjusting for the
+    effective frequency (EF) and saturation effects. It's particularly useful in marketing mix modeling
+    for understanding the diminishing returns and the level of Effective Frequency of advertising at higher levels of GRPs.
+
+    Parameters:
+    - X (array-like): Series of GRPs data for a channel.
+    - EF (int or float): Effective frequency, representing the number of exposures considered effective.
+    - m (int or float, optional): Saturation scale factor. Defaults to 1.
+    - base_alpha (float, optional): Base value for the alpha parameter calculation. Defaults to 0. Can be estimated from Reach/Frequency data.
+    - alpha_slope (float, optional): Slope for the alpha parameter calculation. Defaults to 0.01. Can be estimated from Reach/Frequency data.
+    - beta_param (int or float, optional): Beta parameter for the Beta-binomial distribution, influencing the shape of the saturation curve. Defaults to 5. Can be estimated from Reach/Frequency data.
+
+    Returns:
+    - ndarray: Adjusted saturation levels for each GRP in `X`, considering the effective frequency and other parameters.
+    """
+    # Calculate the alpha parameter for all GRPs
+    alpha_params = base_alpha + alpha_slope * X
+
+    # Calculate non-zero slots for beta-binomial distribution
+    n_slots = np.count_nonzero(X)
+
+    # Initialize cum_prob with zeros and only calculate for non-zero alpha_params
+    cum_prob = np.zeros_like(X, dtype=float)
+    valid_alpha = alpha_params > 0
+    cum_prob[valid_alpha] = 1 - betabinom.cdf(EF-1, n_slots, alpha_params[valid_alpha], beta_param)
+
+    # Calculate saturation for all GRPs
+    saturation = m * np.tanh((X/100) / m) * cum_prob
+
+    return saturation
+
+
 def logistic_saturation(x, lam: Union[npt.NDArray[np.float_], float] = 0.5):
     """Logistic saturation transformation.
 
