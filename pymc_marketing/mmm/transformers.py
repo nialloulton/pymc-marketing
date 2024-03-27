@@ -273,6 +273,23 @@ def delayed_adstock(
     return batched_convolution(x, w, axis=axis, mode=ConvMode.After)
 
 
+def hill_saturation_function(S, V_max, K_d, n):
+    """
+    Hill saturation function to calculate the rate of a process based on substrate concentration.
+    
+    Parameters:
+    - S (float or np.array): Substrate concentration.
+    - V_max (float): Maximum rate of the process.
+    - K_d (float): Dissociation constant.
+    - n (float): Hill coefficient.
+    
+    Returns:
+    - V (float or np.array): Rate of the process.
+    """
+    V = V_max * (S**n) / (K_d**n + S**n)
+    return V
+
+
 def weibull_adstock(
     x,
     lam=1,
